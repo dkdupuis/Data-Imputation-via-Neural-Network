@@ -13,6 +13,6 @@ The architecture is the same as autoencoders. Traditionally autoencoders just at
 
 ## Todo
 
-* Refactor loss function to only evaluate elements that weren't originally NA
+* ~Refactor loss function to only evaluate elements that weren't originally NA~
 * After each training loop, update NA elements with the values predicted by the autoencoder
-* Clean up code
+* Clean up code, generalize naming conventions, improve example data
