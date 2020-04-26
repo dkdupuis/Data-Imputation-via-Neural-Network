@@ -85,19 +85,28 @@ class Autoencoder(tf.keras.Model):
         reconstructed = self.decoder(code)
         return reconstructed
 
-def loss(model, original):
-  reconstruction_error = tf.reduce_mean(tf.square(tf.subtract(model(original), original)))
-  return reconstruction_error
+def mask_nas_for_loss(model, original, nan_loc):
+    predictions = model(original).numpy()
+    predictions[nan_loc] = 0
+    original_np = original.numpy()
+    original_np[nan_loc] = 0
+    return tf.convert_to_tensor(original_np), tf.convert_to_tensor(predictions)
+    
 
-def train(loss, model, opt, original):
-  with tf.GradientTape() as tape:
-    gradients = tape.gradient(loss(model, original), model.trainable_variables)
-    gradient_variables = zip(gradients, model.trainable_variables)
-    opt.apply_gradients(gradient_variables)
+def loss(model, original, nan_loc):
+    original_masked, predictions_masked = mask_nas_for_loss(model, original, nan_loc)
+    reconstruction_error = tf.reduce_mean(tf.square(tf.subtract(model(original), original)))
+    return reconstruction_error
+
+def train(loss, model, opt, original, nan_loc):
+    with tf.GradientTape() as tape:
+        gradients = tape.gradient(loss(model, original, nan_loc), model.trainable_variables)
+        gradient_variables = zip(gradients, model.trainable_variables)
+        opt.apply_gradients(gradient_variables)
 
 
 learning_rate = 0.01
-epochs = 500
+epochs = 50
 batch_size = 10
 iterations = int(epochs*num_months/batch_size)
 
@@ -119,17 +128,18 @@ def replace_na(ndarry):
 
 def fetch_batch(training_features, batch_size):
     raw_batch_features = training_features[np.random.choice(training_features.shape[0], batch_size, replace=False), :]
+    nan_loc = np.isnan(raw_batch_features)
     batch_features_na_filled = replace_na(raw_batch_features)
-    return tf.convert_to_tensor(batch_features_na_filled)
+    return tf.convert_to_tensor(batch_features_na_filled), nan_loc
 
 writer = tf.summary.create_file_writer('tmp')
 
 with writer.as_default():
   with tf.summary.record_if(True):
     for epoch in range(iterations):
-        batch_features = fetch_batch(training_features, batch_size)
-        train(loss, autoencoder, opt, batch_features)
-        loss_values = loss(autoencoder, batch_features)
+        batch_features, nan_loc = fetch_batch(training_features, batch_size)
+        train(loss, autoencoder, opt, batch_features, nan_loc)
+        loss_values = loss(autoencoder, batch_features, nan_loc)
         original = tf.reshape(batch_features, (batch_features.shape[0], num_movies, num_movies, 1))
         reconstructed = tf.reshape(autoencoder(tf.constant(batch_features)), (batch_features.shape[0], num_movies, num_movies, 1))
 
@@ -155,6 +165,7 @@ def make_pred(training_features, num_movies, num_months):
     return autoencoder(tf.constant(replace_na(training_features))).numpy().reshape(num_months, num_movies, num_movies)
 
 
+make_pred(make_pred, num_movies, num_months)
 
 
 
